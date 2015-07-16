@@ -3,6 +3,8 @@ require "spec_helper"
 #require 'active_support/time'
 #require File.expand_path(File.dirname(__FILE__) + '/duration')
 
+Duration = ActiveSupport::Duration
+
 describe Duration do
 
   MONTHS_IN_A_YEAR = 12
@@ -14,7 +16,9 @@ describe Duration do
   SECONDS_IN_A_YEAR=(SECONDS_IN_A_DAY*365)
   SECONDS_IN_A_MONTH=(SECONDS_IN_A_DAY * 30)	
 
+  let(:duration_of_0_iso8601_string) { Duration.new('PT0s') }
   let(:duration_of_5_minutes_and_30_seconds_initialised_from_iso8601_string) { Duration.new('PT5m30s') }
+  let(:duration_of_5_minutes_and_30_seconds_initialised_from_hhmmss_string) { Duration.new('00:05:30') }
   let(:duration_of_4_minutes_initialised_by_value_and_parts) { Duration.new(240,[[:minutes, 4]]) }
   let(:duration_of_4_minutes_initialised_by_numeric) { Duration.new(240) }
   let(:activeSupport_Duration_of_4_minutes) { ActiveSupport::Duration.new(240,[[:minutes, 4]]) }
@@ -77,6 +81,32 @@ describe Duration do
 	  end
 	
 	end
+	
+	context 'given valid hh:mm:ss string' do
+	
+      it 'creates an instance of Duration' do
+		duration_of_5_minutes_and_30_seconds_initialised_from_hhmmss_string.__realclass__.should eq(Duration)
+	  end
+	
+      it 'creates a new parts array' do
+	    duration_of_5_minutes_and_30_seconds_initialised_from_hhmmss_string.parts.should eq([[:minutes,5],[:seconds,30.0]])
+		
+      end
+	
+	  it 'creates a new value' do
+	     duration_of_5_minutes_and_30_seconds_initialised_from_hhmmss_string.value.should eq(330.0) 
+      end
+	
+      it 'outputs a valid iso8601 representation' do
+	    duration_of_5_minutes_and_30_seconds_initialised_from_hhmmss_string.iso8601.should eq('PT5M30S')
+	  end	
+	  
+	  it 'creates a subclass of ActiveSupport::Duration' do
+        (duration_of_5_minutes_and_30_seconds_initialised_from_hhmmss_string.is_a? ActiveSupport::Duration).should eq(true)
+      end
+	
+    end
+	
 	
 	context 'given a value and parts array' do
 	
@@ -161,7 +191,8 @@ describe Duration do
   end    
 
   describe "iso8604 testing" do
-    {"P1Y"            => [[[:years,1]],(SECONDS_IN_A_DAY*365),"P1Y"],
+    {"PT0S"           => [[],0,"P"],
+	 "P1Y"            => [[[:years,1]],(SECONDS_IN_A_DAY*365),"P1Y"],
 	 "P1Y1M"          => [[[:years,1],[:months,1]],(SECONDS_IN_A_DAY*365)+SECONDS_IN_A_MONTH, "P1Y1M"],
 	 "P1YT1H"         => [[[:years,1],[:hours,1]], (SECONDS_IN_A_DAY*365)+SECONDS_IN_AN_HOUR, "P1YT1H"],
 	 "P1YT1M"         => [[[:years,1],[:minutes,1]],(SECONDS_IN_A_DAY*365)+60,"P1YT1M"],
@@ -293,7 +324,16 @@ describe Duration do
 	  it 'returns the Duration minus the second duration' do
         (duration_of_4_minutes_initialised_by_value_and_parts-duration_of_5_minutes_and_30_seconds_initialised_from_iso8601_string).should eq(Duration.new('PT-1M-30S'))
       end
-	 
+
+	  it 'returns the Duration minus the second duration' do
+        ((Duration.new("PT40M")-Duration.new("PT38M")).should eq(Duration.new('PT2M')))
+      end
+	  
+	   it 'returns the Duration minus the second duration' do
+        ((Duration.new("PT40M")-Duration.new("PT38M")).parts.should eq([[:minutes, 40], [:minutes, -38]]))
+      end
+
+	  
      end
 
    end
@@ -389,5 +429,27 @@ describe Duration do
 	end
 	
   end
+  
+  # TODO
+  #   .years
+  #   .months
+  #   .hours
+  #   .minutes
+  #   .seconds
+  #   .tenths
+  #   .hundredths
+  #   .thousandths
+  # should return normalised part
+  #   .in_years 
+  #   .in_months
+  #   .in_hours
+  #   .in_minutes
+  #   .in_seconds
+  #   .in_tenths
+  #   .in_hundredths
+  #   .in_thousandths  
+  # should return decimal representation
+  #
+  # mathematical operations should normalise the internal representation (as far as days)
   
 end

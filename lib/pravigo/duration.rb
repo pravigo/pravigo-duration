@@ -7,11 +7,12 @@ end
 
 class Object; alias __realclass__ class end
 
-module Pravigo
+class Pravigo
   #module Duration
 
 
-class Duration < ActiveSupport::Duration
+#class Duration < ActiveSupport::Duration
+class ActiveSupport::Duration
 	
   @@MONTHS_IN_A_YEAR = 12
   @@SECONDS_IN_A_WEEK = 604800
@@ -48,8 +49,31 @@ class Duration < ActiveSupport::Duration
             @hours = $4.to_i
             @minutes = $5.to_i
 		    @seconds = $6.to_f
-            
-	        @value = (@years*@@SECONDS_IN_A_YEAR)+
+          
+          else		  
+		    if /\A(?:(\d+):?)?
+			      (?:(\d+):?)?
+				  (\d+)?
+	              \Z/ix =~iso8601Duration
+			
+			  @years = 0
+		      @months = 0
+              @days = 0
+			  @hours = $1.to_i
+              @minutes = $2.to_i
+		      @seconds = $3.to_f
+			else
+			  return ::NilClass
+			  @years = 0
+		      @months = 0
+              @days = 0
+			  @hours = 0
+              @minutes = 0
+		      @seconds = 0
+			end
+	      end
+			
+		    @value = (@years*@@SECONDS_IN_A_YEAR)+
 	                 (@months*@@SECONDS_IN_A_MONTH)+
 		    	     (@days*@@SECONDS_IN_A_DAY)+
 			         (@hours*@@SECONDS_IN_AN_HOUR)+
@@ -63,7 +87,7 @@ class Duration < ActiveSupport::Duration
 	  	    @parts << [:hours, @hours] if @hours !=0
 		    @parts << [:minutes, @minutes] if @minutes !=0
 		    @parts << [:seconds,@seconds] if @seconds!=0
-            end
+	      
 		    #else raise an error
 		  else if args[0].is_a? ::Numeric
 		    @value = args[0]
@@ -125,43 +149,87 @@ class Duration < ActiveSupport::Duration
 	
   end
 
-  def +(obj)
-    if obj.is_a? ::ActiveSupport::Duration
-	 super_result = super
-     result = ::Duration.new(super_result.value,super_result.parts)
-     return result
+  ##need to DRY this out
+  def as_24h_clock
+    grouped_parts = parts.group_by(&:first).map { |k, v| [k, v.map(&:last).inject(:+)] }
+    hash_of_parts = ::Hash[grouped_parts]
+    hash_of_parts.default = 0
+
+    total_months = (hash_of_parts[:years]*@@MONTHS_IN_A_YEAR)+(hash_of_parts[:months])
+    totalSeconds = (hash_of_parts[:days]*@@SECONDS_IN_A_DAY)+(hash_of_parts[:hours]*@@SECONDS_IN_AN_HOUR)+(hash_of_parts[:minutes]*@@SECONDS_IN_A_MINUTE)+(hash_of_parts[:seconds])
+    if (total_months < 0)
+	  negative_months = "-"
+	  total_months = 0-total_months
 	else
-	  if obj.is_a? ::Time
-	    return obj + self
-	  else
-	    if obj.is_a? ::Numeric
-	      return self+::Duration.new(obj)
-		end
-	  ##  raise an error
-	  end
+	  negative_months = ""
 	end
+	if (totalSeconds < 0)
+	  negative_seconds = "-"
+	  totalSeconds = 0-totalSeconds
+	else
+	  negative_seconds=""
+	end
+  
+    years_c = total_months.divmod(@@MONTHS_IN_A_YEAR)
+    days_c = totalSeconds.divmod(@@SECONDS_IN_A_DAY)
+    hours_c = days_c[1].divmod(@@SECONDS_IN_AN_HOUR)
+    minutes_c = hours_c[1].divmod(@@SECONDS_IN_A_MINUTE)
+    seconds_c = minutes_c[1]
+  
+    result = ""
+  
+	result << (hours_c[0] != 0 ? "#{negative_seconds}#{ "%02d" % hours_c[0]}:" : "00:")
+    result << (minutes_c[0] != 0 ?  "#{negative_seconds}#{ "%02d" %  minutes_c[0]}:" : "00:")
+    result << (seconds_c != 0 ? ((seconds_c % 1 ==0) ?  "#{negative_seconds}#{ "%02d" % seconds_c.to_i}" : "#{negative_seconds}#{seconds_c.round(4)}") : "00")
+	result << (years_c[0] != 0 ? "+ #{negative_months}#{years_c[0]} years" : "")
+    result << (years_c[1] != 0 ? "+ #{negative_months}#{years_c[1]} months":  "")
+ 	result << (days_c[0] != 0  ? "+ #{negative_months}#{days_c[0]} days" : "")
+ 
+  end
+  
+  #include :hours in inspect
+  def inspect #:nodoc:
+      consolidated = parts.inject(::Hash.new(0)) { |h,(l,r)| h[l] += r; h }
+      parts = [:years, :months, :days, :hours, :minutes, :seconds].map do |length|
+        n = consolidated[length]
+        "#{n} #{n == 1 ? length.to_s.singularize : length.to_s}" if n.nonzero?
+      end.compact
+      parts = ["0 seconds"] if parts.empty?
+      parts.to_sentence(:locale => :en)
   end
 
-  def -(obj)
-    if obj.is_a? ::ActiveSupport::Duration
-	 super_result = super
-     result = ::Duration.new(super_result.value,super_result.parts)
-     return result
-	else
-	  if obj.is_a? ::Time
-	    ##  raise an error
-	  else
-	    if obj.is_a? ::Numeric
-	      return self-::Duration.new(obj)
+ # Adds another Duration or a Numeric to this Duration. Numeric values
+    # are treated as seconds.
+    def +(other)
+      if ::Duration === other
+        ::Duration.new(value + other.value, @parts + other.parts)
+      else
+	    if ::Time === other
+		  other + self
+	    else
+          ::Duration.new(value + other, @parts + [[:seconds, other]])
 		end
-	  ##  raise an error
-	  end
-	end
+      end
+    end
+
+    # Subtracts another Duration or a Numeric from this Duration. Numeric
+    # values are treated as seconds.
+    def -(other)
+      if ::Duration === other
+	     
+         ::Duration.new(value - other.value, @parts +( other.parts.dup.map! { |k,v| [k,-v] } ))
+      else
+	    if ::Time === other
+		  # minus operator is not canonical
+	    else
+          ::Duration.new(value - other, @parts + [[:seconds, -other]])
+		end
+      end
+    end
+
   end
-  
 end
 
-  
-  
-  #end
-end
+Duration = ActiveSupport::Duration
+d= (Duration.new("PT0S")+Duration.new("PT3M"))
+puts d.as_24h_clock
